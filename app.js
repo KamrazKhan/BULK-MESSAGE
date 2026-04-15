@@ -1,43 +1,74 @@
-async function sendMessages() {
-    const numbersText = document.getElementById('numbers').value;
-    const message = document.getElementById('message').value;
-    const statusDiv = document.getElementById('status');
+import streamlit as st
+from twilio.rest import Client
+import os
+from dotenv import load_dotenv
 
-    // Split numbers by line
-    const numbers = numbersText
-        .split('\n')
-        .map(n => n.trim())
-        .filter(n => n.length > 0);
+# ── Load Credentials (Cloud + Local) ───────────────
+try:
+    ACCOUNT_SID = st.secrets["TWILIO_ACCOUNT_SID"]
+    AUTH_TOKEN  = st.secrets["TWILIO_AUTH_TOKEN"]
+    FROM_NUMBER = st.secrets["TWILIO_FROM_NUMBER"]
+except Exception:
+    load_dotenv()
+    ACCOUNT_SID = os.getenv("TWILIO_ACCOUNT_SID")
+    AUTH_TOKEN  = os.getenv("TWILIO_AUTH_TOKEN")
+    FROM_NUMBER = os.getenv("TWILIO_FROM_NUMBER")
 
-    if (numbers.length === 0 || message.trim() === '') {
-        showStatus('Please enter phone numbers and a message.', 'error');
-        return;
-    }
+# ── Validate Credentials ────────────────────────────
+if not ACCOUNT_SID or not AUTH_TOKEN or not FROM_NUMBER:
+    st.error("❌ Twilio credentials not found! Check your Streamlit Secrets.")
+    st.stop()
 
-    showStatus(`Sending to ${numbers.length} numbers...`, 'success');
+if not ACCOUNT_SID.startswith("AC"):
+    st.error("❌ ACCOUNT_SID looks wrong! It must start with 'AC'")
+    st.stop()
 
-    try {
-        const response = await fetch('/send', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ numbers, message })
-        });
+# ── Page Config ─────────────────────────────────────
+st.set_page_config(page_title="Bulk SMS Sender", page_icon="📱")
+st.title("📱 Bulk Message Sender")
 
-        const result = await response.json();
+# ── Input Fields ─────────────────────────────────────
+numbers_input = st.text_area(
+    "Phone Numbers (one per line, with country code)",
+    placeholder="+9779800000001\n+9779800000002\n+9779800000003",
+    height=150
+)
 
-        if (result.success) {
-            showStatus(`✅ Messages sent! Success: ${result.sent}, Failed: ${result.failed}`, 'success');
-        } else {
-            showStatus('❌ Error: ' + result.error, 'error');
-        }
-    } catch (err) {
-        showStatus('❌ Could not connect to server.', 'error');
-    }
-}
+message_input = st.text_area(
+    "Your Message",
+    placeholder="Type your message here...",
+    height=120
+)
 
-function showStatus(msg, type) {
-    const statusDiv = document.getElementById('status');
-    statusDiv.textContent = msg;
-    statusDiv.className = type;
-    statusDiv.style.display = 'block';
-}
+# ── Send Button ───────────────────────────────────────
+if st.button("Send to All"):
+    numbers = [n.strip() for n in numbers_input.split('\n') if n.strip()]
+
+    if not numbers or not message_input.strip():
+        st.error("❌ Please enter phone numbers and a message.")
+    else:
+        try:
+            client = Client(ACCOUNT_SID, AUTH_TOKEN)
+        except Exception as e:
+            st.error(f"❌ Failed to connect to Twilio: {e}")
+            st.stop()
+
+        sent   = 0
+        failed = 0
+
+        with st.spinner(f"Sending to {len(numbers)} numbers..."):
+            for number in numbers:
+                try:
+                    msg = client.messages.create(
+                        body  = message_input,
+                        from_ = FROM_NUMBER,
+                        to    = number
+                    )
+                    sent += 1
+                    st.success(f"✅ Sent to {number} | SID: {msg.sid}")
+
+                except Exception as e:
+                    failed += 1
+                    st.error(f"❌ Failed {number} | Error: {e}")
+
+        st.info(f"📊 Done! Success: {sent}, Failed: {failed}")
