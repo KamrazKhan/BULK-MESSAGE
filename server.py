@@ -1,8 +1,3 @@
-# ── ADD THIS BELOW YOUR CREDENTIAL LOADING ──
-st.write("SID starts with:", ACCOUNT_SID[:6] if ACCOUNT_SID else "❌ NOT LOADED")
-st.write("Token loaded:", "✅ Yes" if AUTH_TOKEN else "❌ NOT LOADED")
-st.write("From number:", FROM_NUMBER if FROM_NUMBER else "❌ NOT LOADED")
-
 import streamlit as st
 from twilio.rest import Client
 import os
