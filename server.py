@@ -1,85 +1,56 @@
-from flask import Flask, request, jsonify, send_from_directory
+import streamlit as st
 from twilio.rest import Client
-from dotenv import load_dotenv
 import os
+from dotenv import load_dotenv
 
-# Load credentials from .env file
 load_dotenv()
 
-app = Flask(__name__)
-
-# ─── Twilio Credentials from .env ───────────────────────────────────────────
+# ── Twilio Credentials ──────────────────────────────
 ACCOUNT_SID = os.getenv("TWILIO_ACCOUNT_SID")
 AUTH_TOKEN  = os.getenv("TWILIO_AUTH_TOKEN")
 FROM_NUMBER = os.getenv("TWILIO_FROM_NUMBER")
 
-# Connect to Twilio API
-client = Client(ACCOUNT_SID, AUTH_TOKEN)
+# ── Page Config ─────────────────────────────────────
+st.set_page_config(page_title="Bulk SMS Sender", page_icon="📱")
+st.title("📱 Bulk Message Sender")
 
-# ─── Serve Frontend Files ────────────────────────────────────────────────────
-@app.route('/')
-def index():
-    return send_from_directory('.', 'index.html')
+# ── Input Fields ─────────────────────────────────────
+numbers_input = st.text_area(
+    "Phone Numbers (one per line, with country code)",
+    placeholder="+9779800000001\n+9779800000002\n+9779800000003",
+    height=150
+)
 
-@app.route('/style.css')
-def css():
-    return send_from_directory('.', 'style.css')
+message_input = st.text_area(
+    "Your Message",
+    placeholder="Type your message here...",
+    height=120
+)
 
-@app.route('/app.js')
-def js():
-    return send_from_directory('.', 'app.js')
+# ── Send Button ───────────────────────────────────────
+if st.button("Send to All"):
+    numbers = [n.strip() for n in numbers_input.split('\n') if n.strip()]
 
-# ─── Send Bulk SMS Route ─────────────────────────────────────────────────────
-@app.route('/send', methods=['POST'])
-def send_messages():
-    data    = request.get_json()
-    numbers = data.get('numbers', [])
-    message = data.get('message', '')
+    if not numbers or not message_input.strip():
+        st.error("❌ Please enter phone numbers and a message.")
+    else:
+        client = Client(ACCOUNT_SID, AUTH_TOKEN)
+        sent   = 0
+        failed = 0
 
-    if not numbers or not message:
-        return jsonify({'success': False, 'error': 'Numbers or message missing'}), 400
+        with st.spinner(f"Sending to {len(numbers)} numbers..."):
+            for number in numbers:
+                try:
+                    msg = client.messages.create(
+                        body  = message_input,
+                        from_ = FROM_NUMBER,
+                        to    = number
+                    )
+                    sent += 1
+                    st.success(f"✅ Sent to {number} | SID: {msg.sid}")
 
-    sent    = 0
-    failed  = 0
-    details = []
+                except Exception as e:
+                    failed += 1
+                    st.error(f"❌ Failed {number} | Error: {e}")
 
-    for number in numbers:
-        try:
-            # Send SMS via Twilio API
-            msg = client.messages.create(
-                body  = message,
-                from_ = FROM_NUMBER,
-                to    = number
-            )
-
-            sent += 1
-            details.append({
-                'number': number,
-                'status': 'sent',
-                'sid'   : msg.sid
-            })
-            print(f"✅ Sent to {number} | SID: {msg.sid}")
-
-        except Exception as e:
-            failed += 1
-            details.append({
-                'number': number,
-                'status': 'failed',
-                'error' : str(e)
-            })
-            print(f"❌ Failed {number} | Error: {e}")
-
-    return jsonify({
-        'success': True,
-        'sent'   : sent,
-        'failed' : failed,
-        'details': details
-    })
-
-# ─── Start Server ────────────────────────────────────────────────────────────
-if __name__ == '__main__':
-    print("="*45)
-    print("  📱 Bulk SMS Sender Server Started!")
-    print("  Open browser: http://localhost:5000")
-    print("="*45)
-    app.run(debug=True, port=5000)
+        st.info(f"📊 Done! Success: {sent}, Failed: {failed}")
